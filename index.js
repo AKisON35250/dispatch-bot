@@ -22,8 +22,6 @@ const client = new Client({
 const DISPATCH_CHANNEL_ID         = "1465480815206076580";       // Panel-Channel
 const MEDIC_CHANNEL_ID            = "1472065994808889437";       // Medic Einsätze
 const WERKSTATT_CHANNEL_ID        = "1472067191238295745";       // Werkstatt Einsätze
-const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";       // Status-Channel Medic
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";       // Status-Channel Werkstatt
 const MEDIC_ROLE_ID               = "1466617210691653785";       // Medic Rolle
 const WERKSTATT_ROLE_ID           = "1472067368665485415";       // Werkstatt Rolle
 
@@ -36,62 +34,43 @@ let werkstattStatus = [];
 client.once('ready', async () => {
   console.log(`✅ Bot online als ${client.user.tag}`);
 
-  // --- Dispatch Panel ---
   const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
   const messages = await panelChannel.messages.fetch({ limit: 10 });
+
   if (!messages.some(m => m.author.id === client.user.id && m.components.length)) {
     const row = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder().setCustomId("werkstatt").setLabel("🛠 Werkstatt rufen").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("medic").setLabel("🚑 Medic rufen").setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId("medic").setLabel("🚑 Medic rufen").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Werkstatt einstempeln").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Werkstatt ausstempeln").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Medic einstempeln").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Medic ausstempeln").setStyle(ButtonStyle.Danger)
       );
-    await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
+
+    await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion oder stempeln dich ein/aus:", components: [row] });
   }
 
-  // --- Status Channels ---
+  // Status-Embed direkt im Dispatch-Channel
   await updateDispatchStatus();
 });
 
-// ================== STATUS UPDATE ==================
+// ================== STATUS UPDATE IM DISPATCH ==================
 async function updateDispatchStatus() {
-  const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
-  const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
+  const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
+  const messages = await panelChannel.messages.fetch({ limit: 20 });
+  const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length);
 
-  const medicEmbed = new EmbedBuilder()
-    .setTitle("🚑 Medic Status")
-    .setDescription(medicStatus.length > 0 ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
-    .setColor("Green");
+  const medicListe = medicStatus.length ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand";
+  const werkstattListe = werkstattStatus.length ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand";
 
-  const werkstattEmbed = new EmbedBuilder()
-    .setTitle("🛠 Werkstatt Status")
-    .setDescription(werkstattStatus.length > 0 ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+  const embed = new EmbedBuilder()
+    .setTitle("📡 Dispatch-Status")
+    .setDescription(`**🚑 Medic:**\n${medicListe}\n\n**🛠 Werkstatt:**\n${werkstattListe}`)
     .setColor("Blue");
 
-  // Medic Embed posten oder editieren
-  const medicMessages = await medicChannel.messages.fetch({ limit: 10 });
-  const medicBotMsg = medicMessages.find(m => m.author.id === client.user.id);
-  if (medicBotMsg) await medicBotMsg.edit({ embeds: [medicEmbed] });
-  else {
-    const rowMedic = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
-      );
-    await medicChannel.send({ content: "**Medic Status**", embeds: [medicEmbed], components: [rowMedic] });
-  }
-
-  // Werkstatt Embed posten oder editieren
-  const werkstattMessages = await werkstattChannel.messages.fetch({ limit: 10 });
-  const werkstattBotMsg = werkstattMessages.find(m => m.author.id === client.user.id);
-  if (werkstattBotMsg) await werkstattBotMsg.edit({ embeds: [werkstattEmbed] });
-  else {
-    const rowWerkstatt = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
-      );
-    await werkstattChannel.send({ content: "**Werkstatt Status**", embeds: [werkstattEmbed], components: [rowWerkstatt] });
-  }
+  if (botMsg) await botMsg.edit({ embeds: [embed] });
+  else await panelChannel.send({ embeds: [embed] });
 }
 
 // ================== INTERACTIONS ==================
@@ -100,7 +79,31 @@ client.on('interactionCreate', async interaction => {
   const user = interaction.user;
   const member = interaction.member;
 
-  // ===== PANEL BUTTONS =====
+  // ===== EIN/AUSSTEMPELN =====
+  if (["medic_in","medic_out","werkstatt_in","werkstatt_out"].includes(interaction.customId)) {
+    let statusArray = interaction.customId.startsWith("medic") ? medicStatus : werkstattStatus;
+    let roleId = interaction.customId.startsWith("medic") ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
+
+    if (interaction.customId.endsWith("in")) {
+      if (!statusArray.includes(member.id)) {
+        statusArray.push(member.id);
+        try { const role = interaction.guild.roles.cache.get(roleId); if(role) await member.roles.add(role); } 
+        catch(err){ console.error("Rollen hinzufügen fehlgeschlagen:", err); }
+      }
+    } else {
+      statusArray = statusArray.filter(id => id !== member.id);
+      try { const role = interaction.guild.roles.cache.get(roleId); if(role) await member.roles.remove(role); }
+      catch(err){ console.error("Rollen entfernen fehlgeschlagen:", err); }
+    }
+
+    if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
+    else werkstattStatus = statusArray;
+
+    await updateDispatchStatus();
+    return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
+  }
+
+  // ===== PANEL BUTTONS FÜR EINSÄTZE =====
   if (interaction.customId === "werkstatt" || interaction.customId === "medic") {
     const fraktion = interaction.customId;
     await interaction.reply({ content: "✏️ Bitte gib jetzt den **Ort / Beschreibung** ein (60s):", ephemeral: true });
@@ -129,43 +132,14 @@ client.on('interactionCreate', async interaction => {
 
       const msg = await zielChannel.send({ embeds: [embed], components: [row] });
       offeneEinsaetze[fraktion] = { message: msg, angenommenVon: null, updates: [] };
-
       await interaction.followUp({ content: `✅ Einsatz für ${fraktion} erstellt!`, ephemeral: true });
     });
 
     collector.on('end', collected => {
-      if (collected.size === 0)
-        interaction.followUp({ content: "❌ Keine Eingabe. Einsatz abgebrochen.", ephemeral: true });
+      if (collected.size === 0) interaction.followUp({ content: "❌ Keine Eingabe. Einsatz abgebrochen.", ephemeral: true });
     });
+
     return;
-  }
-
-  // ===== STATUS BUTTONS MIT ROLLEN =====
-  if (["medic_in","medic_out","werkstatt_in","werkstatt_out"].includes(interaction.customId)) {
-    let statusArray = interaction.customId.startsWith("medic") ? medicStatus : werkstattStatus;
-    let roleId = interaction.customId.startsWith("medic") ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
-
-    if (interaction.customId.endsWith("in")) {
-        if (!statusArray.includes(member.id)) {
-            statusArray.push(member.id);
-            try {
-                const role = interaction.guild.roles.cache.get(roleId);
-                if (role) await member.roles.add(role);
-            } catch (err) { console.error("Rollen hinzufügen fehlgeschlagen:", err); }
-        }
-    } else {
-        statusArray = statusArray.filter(id => id !== member.id);
-        try {
-            const role = interaction.guild.roles.cache.get(roleId);
-            if (role) await member.roles.remove(role);
-        } catch (err) { console.error("Rollen entfernen fehlgeschlagen:", err); }
-    }
-
-    if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
-    else werkstattStatus = statusArray;
-
-    await updateDispatchStatus();
-    return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
   }
 
   // ===== EINSATZ BUTTONS =====
@@ -204,7 +178,7 @@ client.on('interactionCreate', async interaction => {
 
     collector.on('collect', async m => {
       einsatz.updates.push(`<@${user.id}>: ${m.content}`);
-      embed.setDescription(embed.data.description.split("\n").filter(line => !line.startsWith("Update:")).join("\n") + "\n" + einsatz.updates.join("\n"));
+      embed.setDescription(embed.data.description.split("\n").filter(line => !line.startsWith("<@")).join("\n") + "\n" + einsatz.updates.join("\n"));
       await einsatz.message.edit({ embeds: [embed] });
       await m.delete().catch(() => {});
       await interaction.followUp({ content: "✅ Status aktualisiert!", ephemeral: true });
@@ -222,14 +196,15 @@ client.on('interactionCreate', async interaction => {
         await client.channels.fetch(MEDIC_CHANNEL_ID) : 
         await client.channels.fetch(WERKSTATT_CHANNEL_ID);
 
-    // Rolle taggen damit alle es sehen
     const roleId = fraktion === "medic" ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
     await zielChannel.send({ content: `<@&${roleId}> ⚠️ Verstärkung benötigt!\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}` });
     return interaction.reply({ content: "✅ Verstärkung angefordert!", ephemeral: true });
   }
+
 });
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
+
 
 
