@@ -24,6 +24,27 @@ const WERKSTATT_CHANNEL_ID = "1472067191238295745";
 const MEDIC_STATUS_CHANNEL_ID = "1472068510057369640";    
 const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";
 
+const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+});
+
+// ================== CONFIG ==================
+const DISPATCH_CHANNEL_ID         = "1465480815206076580";       // Panel-Channel
+const MEDIC_CHANNEL_ID            = "1472065994808889437"; // Medic Einsätze
+const WERKSTATT_CHANNEL_ID        = "1472067191238295745"; // Werkstatt Einsätze
+const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";  // Status-Channel Medic
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Status-Channel Werkstatt
+const MEDIC_ROLE_ID               = "1466617210691653785";          // Medic Rolle
+const WERKSTATT_ROLE_ID           = "1472067368665485415";      // Werkstatt Rolle
+
 // ================== MAPS ==================
 let offeneEinsaetze = { werkstatt: null, medic: null };
 let medicStatus     = [];
@@ -63,7 +84,6 @@ client.once('ready', async () => {
       new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
     );
 
-  // Status-Embeds posten, falls noch nicht vorhanden
   if (!(await medicChannel.messages.fetch({ limit: 10 })).some(m => m.author.id === client.user.id))
     await medicChannel.send({ content: "**Medic Status**", components: [rowMedic] });
 
@@ -80,7 +100,6 @@ client.on('interactionCreate', async interaction => {
   if (interaction.customId === "werkstatt" || interaction.customId === "medic") {
     const fraktion = interaction.customId;
 
-    // 1️⃣ Ort / Beschreibung abfragen
     await interaction.reply({ content: "✏️ Bitte gib jetzt den **Ort / Beschreibung** für den Einsatz ein (Du hast 60 Sekunden):", ephemeral: true });
 
     const filter = m => m.author.id === user.id;
@@ -90,7 +109,6 @@ client.on('interactionCreate', async interaction => {
       const ortBeschreibung = m.content;
       await m.delete().catch(() => {});
 
-      // 2️⃣ Einsatz-Embed erstellen
       const embed = new EmbedBuilder()
         .setTitle(`🚨 ${fraktion.charAt(0).toUpperCase() + fraktion.slice(1)} Einsatz`)
         .setDescription(`Einsatz von: ${user}\nStatus: 🟡 Offen\nOrt / Beschreibung: ${ortBeschreibung}`)
@@ -103,7 +121,6 @@ client.on('interactionCreate', async interaction => {
           new ButtonBuilder().setCustomId(`close_${fraktion}`).setLabel("🔒 Einsatz schließen").setStyle(ButtonStyle.Danger)
         );
 
-      // 3️⃣ Ziel-Channel
       const zielChannel = fraktion === "werkstatt" ? await client.channels.fetch(WERKSTATT_CHANNEL_ID)
                                                    : await client.channels.fetch(MEDIC_CHANNEL_ID);
 
@@ -120,20 +137,28 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // ================== STATUS BUTTONS ==================
+  // ================== STATUS BUTTONS MIT ROLLEN ==================
   if (["medic_in","medic_out","werkstatt_in","werkstatt_out"].includes(interaction.customId)) {
     let statusArray = interaction.customId.startsWith("medic") ? medicStatus : werkstattStatus;
-    let statusChannel = interaction.customId.startsWith("medic") ? await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID)
-                                                                  : await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
+    let roleId = interaction.customId.startsWith("medic") ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
+    let member = interaction.member;
 
     if (interaction.customId.endsWith("in")) {
-      if (!statusArray.includes(user.id)) statusArray.push(user.id);
+        if (!statusArray.includes(member.id)) {
+            statusArray.push(member.id);
+            if (!member.roles.cache.has(roleId)) await member.roles.add(roleId).catch(console.error);
+        }
     } else {
-      statusArray = statusArray.filter(id => id !== user.id);
+        statusArray = statusArray.filter(id => id !== member.id);
+        if (member.roles.cache.has(roleId)) await member.roles.remove(roleId).catch(console.error);
     }
 
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
     else werkstattStatus = statusArray;
+
+    const statusChannel = interaction.customId.startsWith("medic") ? 
+        await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID) : 
+        await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
 
     const embed = new EmbedBuilder()
       .setTitle(interaction.customId.startsWith("medic") ? "🚑 Medic Status" : "🛠 Werkstatt Status")
@@ -164,7 +189,15 @@ client.on('interactionCreate', async interaction => {
     einsatz.angenommenVon = user.id;
     embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: ${user}\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: ${embed.data.description.split("\n").slice(2).join("\n")}`);
     embed.setColor("Green");
-    await einsatz.message.edit({ embeds: [embed] });
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId(`verstärkung_${fraktion}`).setLabel("⚠️ Verstärkung benötigt").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`update_${fraktion}`).setLabel("✏️ Status / Ort eintragen").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`close_${fraktion}`).setLabel("🔒 Einsatz schließen").setStyle(ButtonStyle.Secondary)
+      );
+
+    await einsatz.message.edit({ embeds: [embed], components: [row] });
     return interaction.reply({ content: `✅ Du hast den Einsatz übernommen!`, ephemeral: true });
   }
 
@@ -185,6 +218,13 @@ client.on('interactionCreate', async interaction => {
     await einsatz.message.edit({ content: `✔️ Einsatz abgeschlossen`, embeds: [] });
     offeneEinsaetze[fraktion] = null;
     return interaction.reply({ content: `🔒 Einsatz für ${fraktion} geschlossen`, ephemeral: true });
+  }
+
+  // ================== VERSTÄRKUNG ==================
+  if (action === "verstärkung") {
+    const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
+    await panelChannel.send(`⚠️ **Verstärkung benötigt!**\nFraktion: ${fraktion}\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}`);
+    return interaction.reply({ content: "✅ Verstärkung angefordert! Alle Medics wurden informiert.", ephemeral: true });
   }
 });
 
