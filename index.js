@@ -1,23 +1,30 @@
 const {
   Client,
   GatewayIntentBits,
+  Partials,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
-  PermissionsBitField
+  EmbedBuilder
 } = require('discord.js');
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+});
 
 // --- CHANNEL IDS ---
-const DISPATCH_CHANNEL_ID = "1465480815206076580";      // Panel
-const MEDIC_CHANNEL_ID = "1472065994808889437";   // Medic-Einsätze
-const WERKSTATT_CHANNEL_ID = "1472067191238295745"; // Werkstatt-Einsätze
-const MEDIC_STATUS_CHANNEL_ID = "1472068510057369640";    // Medic-Status
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Werkstatt-Status
+const DISPATCH_CHANNEL_ID = "1465480815206076580";      
+const MEDIC_CHANNEL_ID = "1472065994808889437";   
+const WERKSTATT_CHANNEL_ID = "1472067191238295745"; 
+const MEDIC_STATUS_CHANNEL_ID = "1472068510057369640";    
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";
 
-// --- Maps für Einsätze & Status ---
+// --- Einsätze & Status ---
 let offeneEinsaetze = { werkstatt: null, medic: null };
 let medicStatus = [];
 let werkstattStatus = [];
@@ -55,7 +62,7 @@ client.once('ready', async () => {
       new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
     );
 
-  // Postet initiale Status-Embeds, falls noch nicht vorhanden
+  // Poste Status-Embeds nur, falls noch nicht vorhanden
   const medicMsgs = await medicChannel.messages.fetch({ limit: 10 });
   if (!medicMsgs.some(m => m.author.id === client.user.id)) {
     await medicChannel.send({ content: "**Medic Status**", components: [rowMedic] });
@@ -67,6 +74,7 @@ client.once('ready', async () => {
   }
 });
 
+// --- INTERACTION HANDLER ---
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
   const user = interaction.user;
@@ -169,3 +177,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.TOKEN);
+
