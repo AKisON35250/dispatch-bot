@@ -19,13 +19,13 @@ const client = new Client({
 });
 
 // ================== CONFIG ==================
-const DISPATCH_CHANNEL_ID         = "1465480815206076580"; // Panel-Channel
-const MEDIC_CHANNEL_ID            = "1472065994808889437"; // Medic Einsätze
-const WERKSTATT_CHANNEL_ID        = "1472067191238295745"; // Werkstatt Einsätze
-const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640"; // Status-Channel Medic
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Status-Channel Werkstatt
-const MEDIC_ROLE_ID               = "1466617210691653785"; // Medic Rolle
-const WERKSTATT_ROLE_ID           = "1472067368665485415"; // Werkstatt Rolle
+const DISPATCH_CHANNEL_ID         = "1465480815206076580";       // Panel-Channel
+const MEDIC_CHANNEL_ID            = "1472065994808889437";       // Medic Einsätze
+const WERKSTATT_CHANNEL_ID        = "1472067191238295745";       // Werkstatt Einsätze
+const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";       // Status-Channel Medic
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";       // Status-Channel Werkstatt
+const MEDIC_ROLE_ID               = "1466617210691653785";       // Medic Rolle
+const WERKSTATT_ROLE_ID           = "1472067368665485415";       // Werkstatt Rolle
 
 // ================== MAPS ==================
 let offeneEinsaetze = { werkstatt: null, medic: null };
@@ -49,29 +49,72 @@ client.once('ready', async () => {
   }
 
   // --- Status Channels ---
+  await updateStatusChannels();
   await updateDispatchStatus();
 });
 
-// ================== STATUS UPDATE ==================
-async function updateDispatchStatus() {
-  const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
+// ================== STATUS CHANNELS UPDATE ==================
+async function updateStatusChannels() {
+  // MEDIC STATUS CHANNEL
+  const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
+  const medicEmbed = new EmbedBuilder()
+    .setTitle("🚑 Medic Status")
+    .setDescription(medicStatus.length ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+    .setColor("Green");
 
-  const medicListe = medicStatus.length ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt";
-  const werkstattListe = werkstattStatus.length ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt";
+  const rowMedic = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+    );
 
-  const embed = new EmbedBuilder()
-    .setTitle("📡 Dispatch-Status")
-    .setDescription(`**🚑 Medic:**\n${medicListe}\n\n**🛠 Werkstatt:**\n${werkstattListe}`)
+  const medicMessages = await medicChannel.messages.fetch({ limit: 10 });
+  const medicBotMsg = medicMessages.find(m => m.author.id === client.user.id);
+  if (medicBotMsg) await medicBotMsg.edit({ embeds: [medicEmbed], components: [rowMedic] });
+  else await medicChannel.send({ content: "**Medic Status**", embeds: [medicEmbed], components: [rowMedic] });
+
+  // WERKSTATT STATUS CHANNEL
+  const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
+  const werkstattEmbed = new EmbedBuilder()
+    .setTitle("🛠 Werkstatt Status")
+    .setDescription(werkstattStatus.length ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
     .setColor("Blue");
 
-  const messages = await panelChannel.messages.fetch({ limit: 20 });
-  const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length);
+  const rowWerkstatt = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+    );
 
-  if (botMsg) {
-    await botMsg.edit({ embeds: [embed] });
-  } else {
-    await panelChannel.send({ embeds: [embed] }); // **Keine Buttons im Dispatch**
-  }
+  const werkstattMessages = await werkstattChannel.messages.fetch({ limit: 10 });
+  const werkstattBotMsg = werkstattMessages.find(m => m.author.id === client.user.id);
+  if (werkstattBotMsg) await werkstattBotMsg.edit({ embeds: [werkstattEmbed], components: [rowWerkstatt] });
+  else await werkstattChannel.send({ content: "**Werkstatt Status**", embeds: [werkstattEmbed], components: [rowWerkstatt] });
+}
+
+// ================== DISPATCH STATUS UPDATE ==================
+async function updateDispatchStatus() {
+  const dispatchChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
+
+  const descriptionLines = [];
+
+  descriptionLines.push("**Medic:**");
+  if (medicStatus.length) descriptionLines.push(...medicStatus.map(id => `<@${id}>`));
+  else descriptionLines.push("Niemand eingestempelt");
+
+  descriptionLines.push("\n**Werkstatt:**");
+  if (werkstattStatus.length) descriptionLines.push(...werkstattStatus.map(id => `<@${id}>`));
+  else descriptionLines.push("Niemand eingestempelt");
+
+  const dispatchEmbed = new EmbedBuilder()
+    .setTitle("📡 Aktueller Status")
+    .setDescription(descriptionLines.join("\n"))
+    .setColor("Orange");
+
+  const messages = await dispatchChannel.messages.fetch({ limit: 10 });
+  const botMsg = messages.find(m => m.author.id === client.user.id);
+  if (botMsg) await botMsg.edit({ embeds: [dispatchEmbed] });
+  else await dispatchChannel.send({ embeds: [dispatchEmbed] });
 }
 
 // ================== INTERACTIONS ==================
@@ -126,27 +169,27 @@ client.on('interactionCreate', async interaction => {
     let roleId = interaction.customId.startsWith("medic") ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
 
     if (interaction.customId.endsWith("in")) {
-        if (!statusArray.includes(member.id)) {
-            statusArray.push(member.id);
-            try {
-                const role = interaction.guild.roles.cache.get(roleId);
-                if (role) await member.roles.add(role);
-            } catch (err) { console.error("Rollen hinzufügen fehlgeschlagen:", err); }
-        }
-    } else {
-        statusArray = statusArray.filter(id => id !== member.id);
+      if (!statusArray.includes(member.id)) {
+        statusArray.push(member.id);
         try {
-            const role = interaction.guild.roles.cache.get(roleId);
-            if (role) await member.roles.remove(role);
-        } catch (err) { console.error("Rollen entfernen fehlgeschlagen:", err); }
+          const role = interaction.guild.roles.cache.get(roleId);
+          if (role) await member.roles.add(role);
+        } catch (err) { console.error("Rollen hinzufügen fehlgeschlagen:", err); }
+      }
+    } else {
+      statusArray = statusArray.filter(id => id !== member.id);
+      try {
+        const role = interaction.guild.roles.cache.get(roleId);
+        if (role) await member.roles.remove(role);
+      } catch (err) { console.error("Rollen entfernen fehlgeschlagen:", err); }
     }
 
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
     else werkstattStatus = statusArray;
 
-    // **Nur Dispatch-Status updaten**
+    // Update Status-Channels + Dispatch
+    await updateStatusChannels();
     await updateDispatchStatus();
-
     return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
   }
 
@@ -212,3 +255,4 @@ client.on('interactionCreate', async interaction => {
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
+
