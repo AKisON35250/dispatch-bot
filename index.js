@@ -32,16 +32,14 @@ let offeneEinsaetze = { werkstatt: null, medic: null };
 let medicStatus     = [];
 let werkstattStatus = [];
 
-// ================== BOT READY ==================
+// ================== READY ==================
 client.once('ready', async () => {
   console.log(`✅ Bot online als ${client.user.tag}`);
 
-  // --- Dispatch Panel ---
+  // Panel erstellen, falls noch nicht vorhanden
   const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
   const messages = await panelChannel.messages.fetch({ limit: 10 });
-  const panelExists = messages.some(m => m.author.id === client.user.id && m.components.length);
-
-  if (!panelExists) {
+  if (!messages.some(m => m.author.id === client.user.id && m.components.length)) {
     const row = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder().setCustomId("werkstatt").setLabel("🛠 Werkstatt rufen").setStyle(ButtonStyle.Primary),
@@ -50,7 +48,7 @@ client.once('ready', async () => {
     await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
   }
 
-  // --- Status Channels ---
+  // Status-Channels vorbereiten
   const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
   const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
 
@@ -77,12 +75,12 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
   const user = interaction.user;
+  const member = interaction.member;
 
-  // ================== PANEL BUTTONS ==================
+  // ===== PANEL BUTTONS =====
   if (interaction.customId === "werkstatt" || interaction.customId === "medic") {
     const fraktion = interaction.customId;
-
-    await interaction.reply({ content: "✏️ Bitte gib jetzt den **Ort / Beschreibung** für den Einsatz ein (Du hast 60 Sekunden):", ephemeral: true });
+    await interaction.reply({ content: "✏️ Bitte gib jetzt den **Ort / Beschreibung** ein (60s):", ephemeral: true });
 
     const filter = m => m.author.id === user.id;
     const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
@@ -108,22 +106,20 @@ client.on('interactionCreate', async interaction => {
 
       const msg = await zielChannel.send({ embeds: [embed], components: [row] });
       offeneEinsaetze[fraktion] = { message: msg, angenommenVon: null };
-
       await interaction.followUp({ content: `✅ Einsatz für ${fraktion} erstellt!`, ephemeral: true });
     });
 
     collector.on('end', collected => {
       if (collected.size === 0)
-        interaction.followUp({ content: "❌ Du hast keinen Ort / Beschreibung eingegeben. Einsatz abgebrochen.", ephemeral: true });
+        interaction.followUp({ content: "❌ Keine Eingabe. Einsatz abgebrochen.", ephemeral: true });
     });
     return;
   }
 
-  // ================== STATUS BUTTONS MIT ROLLEN ==================
+  // ===== STATUS BUTTONS MIT ROLLEN =====
   if (["medic_in","medic_out","werkstatt_in","werkstatt_out"].includes(interaction.customId)) {
     let statusArray = interaction.customId.startsWith("medic") ? medicStatus : werkstattStatus;
     let roleId = interaction.customId.startsWith("medic") ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
-    let member = interaction.member;
 
     if (interaction.customId.endsWith("in")) {
         if (!statusArray.includes(member.id)) {
@@ -169,7 +165,7 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
   }
 
-  // ================== EINSATZ BUTTONS ==================
+  // ===== EINSATZ BUTTONS =====
   const parts = interaction.customId.split("_");
   if (parts.length < 2) return;
   const action = parts[0];
@@ -181,7 +177,7 @@ client.on('interactionCreate', async interaction => {
 
   if (action === "annehmen") {
     if (einsatz.angenommenVon)
-      return interaction.reply({ content: `❌ Einsatz wurde bereits übernommen von <@${einsatz.angenommenVon}>!`, ephemeral: true });
+      return interaction.reply({ content: `❌ Bereits übernommen von <@${einsatz.angenommenVon}>!`, ephemeral: true });
 
     einsatz.angenommenVon = user.id;
     embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: ${user}\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: ${embed.data.description.split("\n").slice(2).join("\n")}`);
@@ -195,11 +191,11 @@ client.on('interactionCreate', async interaction => {
       );
 
     await einsatz.message.edit({ embeds: [embed], components: [row] });
-    return interaction.reply({ content: `✅ Du hast den Einsatz übernommen!`, ephemeral: true });
+    return interaction.reply({ content: `✅ Einsatz übernommen!`, ephemeral: true });
   }
 
   if (action === "update") {
-    await interaction.reply({ content: "Schreibe jetzt in den Chat deinen Status / Ort für den Einsatz:", ephemeral: true });
+    await interaction.reply({ content: "Schreibe Status / Ort:", ephemeral: true });
     const filter = m => m.author.id === user.id;
     const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
 
@@ -217,18 +213,17 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `🔒 Einsatz für ${fraktion} geschlossen`, ephemeral: true });
   }
 
-  // ================== VERSTÄRKUNG ==================
+  // ===== VERSTÄRKUNG =====
   if (action === "verstärkung") {
     const zielChannel = fraktion === "medic" ? 
         await client.channels.fetch(MEDIC_CHANNEL_ID) : 
         await client.channels.fetch(WERKSTATT_CHANNEL_ID);
 
     await zielChannel.send(`⚠️ **Verstärkung benötigt!**\nFraktion: ${fraktion}\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}`);
-    return interaction.reply({ content: "✅ Verstärkung angefordert! Alle Fraktionsmitglieder wurden informiert.", ephemeral: true });
+    return interaction.reply({ content: "✅ Verstärkung angefordert!", ephemeral: true });
   }
 });
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
-
 
