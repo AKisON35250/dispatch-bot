@@ -18,6 +18,25 @@ let offeneEinsaetze = new Map();
 
 client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
+
+  const channel = await client.channels.fetch("1465480815206076580");
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId("werkstatt")
+        .setLabel("🛠 Werkstatt rufen")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId("medic")
+        .setLabel("🚑 Medic rufen")
+        .setStyle(ButtonStyle.Success)
+    );
+
+  await channel.send({
+    content: "📡 **DISPATCH SYSTEM**\nWähle eine Fraktion:",
+    components: [row]
+  });
 });
 
 client.on('interactionCreate', async interaction => {
