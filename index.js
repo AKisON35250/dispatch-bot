@@ -55,24 +55,47 @@ client.on('interactionCreate', async interaction => {
     const role = interaction.customId === "werkstatt" ? werkstattRole : medicRole;
     const type = interaction.customId === "werkstatt" ? "Werkstatt" : "Medic";
 
-    const channel = await guild.channels.create({
-      name: `einsatz-${einsatzNummer}`,
-      type: ChannelType.GuildText,
-      permissionOverwrites: [
-        {
-          id: guild.roles.everyone,
-          deny: [PermissionsBitField.Flags.ViewChannel],
-        },
-        {
-          id: role.id,
-          allow: [PermissionsBitField.Flags.ViewChannel],
-        },
-        {
-          id: interaction.user.id,
-          allow: [PermissionsBitField.Flags.ViewChannel],
-        }
-      ]
-    });
+const channel = await guild.channels.create({
+  name: `einsatz-${einsatzNummer}`,
+  type: ChannelType.GuildText,
+});
+
+// Rechte automatisch setzen
+await channel.permissionOverwrites.set([
+  {
+    id: guild.roles.everyone,
+    deny: [PermissionsBitField.Flags.ViewChannel],
+  },
+  {
+    id: role.id, // Fraktionsrolle (Medic/Werkstatt)
+    allow: [
+      PermissionsBitField.Flags.ViewChannel,
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.EmbedLinks,
+      PermissionsBitField.Flags.AttachFiles
+    ],
+  },
+  {
+    id: interaction.user.id, // Spieler, der gerufen hat
+    allow: [
+      PermissionsBitField.Flags.ViewChannel,
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.EmbedLinks,
+      PermissionsBitField.Flags.AttachFiles
+    ],
+  },
+  {
+    id: client.user.id, // Bot selbst
+    allow: [
+      PermissionsBitField.Flags.ViewChannel,
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.ManageChannels,
+      PermissionsBitField.Flags.ManageMessages,
+      PermissionsBitField.Flags.EmbedLinks,
+      PermissionsBitField.Flags.AttachFiles
+    ],
+  }
+]);
 
     const embed = new EmbedBuilder()
       .setTitle(`🚨 Neuer ${type} Einsatz`)
