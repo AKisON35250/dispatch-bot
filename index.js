@@ -49,27 +49,50 @@ client.once('ready', async () => {
   }
 
   // --- Status Channels ---
+  await updateDispatchStatus();
+});
+
+// ================== STATUS UPDATE ==================
+async function updateDispatchStatus() {
   const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
   const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
 
-  const rowMedic = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
-    );
+  const medicEmbed = new EmbedBuilder()
+    .setTitle("🚑 Medic Status")
+    .setDescription(medicStatus.length > 0 ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+    .setColor("Green");
 
-  const rowWerkstatt = new ActionRowBuilder()
-    .addComponents(
-      new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
-    );
+  const werkstattEmbed = new EmbedBuilder()
+    .setTitle("🛠 Werkstatt Status")
+    .setDescription(werkstattStatus.length > 0 ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+    .setColor("Blue");
 
-  if (!(await medicChannel.messages.fetch({ limit: 10 })).some(m => m.author.id === client.user.id))
-    await medicChannel.send({ content: "**Medic Status**", components: [rowMedic] });
+  // Medic Embed posten oder editieren
+  const medicMessages = await medicChannel.messages.fetch({ limit: 10 });
+  const medicBotMsg = medicMessages.find(m => m.author.id === client.user.id);
+  if (medicBotMsg) await medicBotMsg.edit({ embeds: [medicEmbed] });
+  else {
+    const rowMedic = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+      );
+    await medicChannel.send({ content: "**Medic Status**", embeds: [medicEmbed], components: [rowMedic] });
+  }
 
-  if (!(await werkstattChannel.messages.fetch({ limit: 10 })).some(m => m.author.id === client.user.id))
-    await werkstattChannel.send({ content: "**Werkstatt Status**", components: [rowWerkstatt] });
-});
+  // Werkstatt Embed posten oder editieren
+  const werkstattMessages = await werkstattChannel.messages.fetch({ limit: 10 });
+  const werkstattBotMsg = werkstattMessages.find(m => m.author.id === client.user.id);
+  if (werkstattBotMsg) await werkstattBotMsg.edit({ embeds: [werkstattEmbed] });
+  else {
+    const rowWerkstatt = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+      );
+    await werkstattChannel.send({ content: "**Werkstatt Status**", embeds: [werkstattEmbed], components: [rowWerkstatt] });
+  }
+}
 
 // ================== INTERACTIONS ==================
 client.on('interactionCreate', async interaction => {
@@ -141,19 +164,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
     else werkstattStatus = statusArray;
 
-    const statusChannel = interaction.customId.startsWith("medic") ? 
-        await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID) : 
-        await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
-
-    const embed = new EmbedBuilder()
-      .setTitle(interaction.customId.startsWith("medic") ? "🚑 Medic Status" : "🛠 Werkstatt Status")
-      .setDescription(statusArray.length > 0 ? statusArray.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
-      .setColor(interaction.customId.startsWith("medic") ? "Green" : "Blue");
-
-    const messages = await statusChannel.messages.fetch({ limit: 10 });
-    const botMsg = messages.find(m => m.author.id === client.user.id);
-    if (botMsg) await botMsg.edit({ embeds: [embed] });
-
+    await updateDispatchStatus();
     return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
   }
 
@@ -220,4 +231,5 @@ client.on('interactionCreate', async interaction => {
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
+
 
