@@ -19,13 +19,13 @@ const client = new Client({
 });
 
 // ================== CONFIG ==================
-const DISPATCH_CHANNEL_ID         = "1465480815206076580";       // Panel-Channel
-const MEDIC_CHANNEL_ID            = "1472065994808889437";       // Medic Einsätze
-const WERKSTATT_CHANNEL_ID        = "1472067191238295745";       // Werkstatt Einsätze
-const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";       // Status-Channel Medic
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";       // Status-Channel Werkstatt
-const MEDIC_ROLE_ID               = "1466617210691653785";       // Medic Rolle
-const WERKSTATT_ROLE_ID           = "1472067368665485415";       // Werkstatt Rolle
+const DISPATCH_CHANNEL_ID         = "1465480815206076580"; // Panel-Channel
+const MEDIC_CHANNEL_ID            = "1472065994808889437"; // Medic Einsätze
+const WERKSTATT_CHANNEL_ID        = "1472067191238295745"; // Werkstatt Einsätze
+const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640"; // Status-Channel Medic
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Status-Channel Werkstatt
+const MEDIC_ROLE_ID               = "1466617210691653785"; // Medic Rolle
+const WERKSTATT_ROLE_ID           = "1472067368665485415"; // Werkstatt Rolle
 
 // ================== MAPS ==================
 let offeneEinsaetze = { werkstatt: null, medic: null };
@@ -48,7 +48,7 @@ client.once('ready', async () => {
     await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
   }
 
-  // --- Status im Dispatch-Channel ---
+  // --- Status Channels ---
   await updateDispatchStatus();
 });
 
@@ -70,14 +70,7 @@ async function updateDispatchStatus() {
   if (botMsg) {
     await botMsg.edit({ embeds: [embed] });
   } else {
-    const row = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Medic einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Medic ausstempeln").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Werkstatt einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Werkstatt ausstempeln").setStyle(ButtonStyle.Danger)
-      );
-    await panelChannel.send({ embeds: [embed], components: [row] });
+    await panelChannel.send({ embeds: [embed] }); // **Keine Buttons im Dispatch**
   }
 }
 
@@ -151,7 +144,9 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
     else werkstattStatus = statusArray;
 
+    // **Nur Dispatch-Status updaten**
     await updateDispatchStatus();
+
     return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
   }
 
@@ -217,4 +212,3 @@ client.on('interactionCreate', async interaction => {
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
-
