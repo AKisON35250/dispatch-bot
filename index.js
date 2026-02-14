@@ -4,191 +4,167 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
-  PermissionsBitField,
-  EmbedBuilder
+  EmbedBuilder,
+  PermissionsBitField
 } = require('discord.js');
 
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-let einsatzNummer = 1;
-let offeneEinsaetze = new Map();
+// --- CHANNEL IDS ---
+const DISPATCH_CHANNEL_ID = "1465480815206076580";      // Panel
+const MEDIC_CHANNEL_ID = "1472065994808889437";   // Medic-Einsätze
+const WERKSTATT_CHANNEL_ID = "1472067191238295745"; // Werkstatt-Einsätze
+const MEDIC_STATUS_CHANNEL_ID = "1472068510057369640";    // Medic-Status
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Werkstatt-Status
+
+// --- Maps für Einsätze & Status ---
+let offeneEinsaetze = { werkstatt: null, medic: null };
+let medicStatus = [];
+let werkstattStatus = [];
 
 client.once('ready', async () => {
   console.log(`Bot online als ${client.user.tag}`);
 
-  const channel = await client.channels.fetch("1465480815206076580");
+  // --- PANEL CHANNEL ---
+  const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
+  const messages = await panelChannel.messages.fetch({ limit: 10 });
+  const panelExists = messages.some(m => m.author.id === client.user.id && m.components.length);
 
-  const row = new ActionRowBuilder()
+  if (!panelExists) {
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder().setCustomId("werkstatt").setLabel("🛠 Werkstatt rufen").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("medic").setLabel("🚑 Medic rufen").setStyle(ButtonStyle.Success)
+      );
+    await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
+  }
+
+  // --- STATUS CHANNELS ---
+  const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
+  const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
+
+  const rowMedic = new ActionRowBuilder()
     .addComponents(
-      new ButtonBuilder()
-        .setCustomId("werkstatt")
-        .setLabel("🛠 Werkstatt rufen")
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId("medic")
-        .setLabel("🚑 Medic rufen")
-        .setStyle(ButtonStyle.Success)
+      new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
     );
 
-  await channel.send({
-    content: "📡 **DISPATCH SYSTEM**\nWähle eine Fraktion:",
-    components: [row]
-  });
+  const rowWerkstatt = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+    );
+
+  // Postet initiale Status-Embeds, falls noch nicht vorhanden
+  const medicMsgs = await medicChannel.messages.fetch({ limit: 10 });
+  if (!medicMsgs.some(m => m.author.id === client.user.id)) {
+    await medicChannel.send({ content: "**Medic Status**", components: [rowMedic] });
+  }
+
+  const werkstattMsgs = await werkstattChannel.messages.fetch({ limit: 10 });
+  if (!werkstattMsgs.some(m => m.author.id === client.user.id)) {
+    await werkstattChannel.send({ content: "**Werkstatt Status**", components: [rowWerkstatt] });
+  }
 });
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
+  const user = interaction.user;
 
-  const guild = interaction.guild;
-
-  const werkstattRole = guild.roles.cache.find(r => r.name === "Werkstatt");
-  const medicRole = guild.roles.cache.find(r => r.name === "Medic");
-
-  // ================================
-  // DISPATCH ERSTELLEN
-  // ================================
+  // --- PANEL BUTTONS ---
   if (interaction.customId === "werkstatt" || interaction.customId === "medic") {
+    const fraktion = interaction.customId;
 
-    const role = interaction.customId === "werkstatt" ? werkstattRole : medicRole;
-    const type = interaction.customId === "werkstatt" ? "Werkstatt" : "Medic";
+    let zielChannel = fraktion === "werkstatt" ? await client.channels.fetch(WERKSTATT_CHANNEL_ID)
+                                              : await client.channels.fetch(MEDIC_CHANNEL_ID);
 
-const channel = await guild.channels.create({
-  name: `einsatz-${einsatzNummer}`,
-  type: ChannelType.GuildText,
-});
-
-// Rechte automatisch setzen
-await channel.permissionOverwrites.set([
-  {
-    id: guild.roles.everyone,
-    deny: [PermissionsBitField.Flags.ViewChannel],
-  },
-  {
-    id: role.id, // Fraktionsrolle (Medic/Werkstatt)
-    allow: [
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.EmbedLinks,
-      PermissionsBitField.Flags.AttachFiles
-    ],
-  },
-  {
-    id: interaction.user.id, // Spieler, der gerufen hat
-    allow: [
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.EmbedLinks,
-      PermissionsBitField.Flags.AttachFiles
-    ],
-  },
-  {
-    id: client.user.id, // Bot selbst
-    allow: [
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.ManageChannels,
-      PermissionsBitField.Flags.ManageMessages,
-      PermissionsBitField.Flags.EmbedLinks,
-      PermissionsBitField.Flags.AttachFiles
-    ],
-  }
-]);
+    if (offeneEinsaetze[fraktion]) {
+      return interaction.reply({ content: `❌ Ein Einsatz für ${fraktion} läuft bereits!`, ephemeral: true });
+    }
 
     const embed = new EmbedBuilder()
-      .setTitle(`🚨 Neuer ${type} Einsatz`)
-      .setDescription(
-        `Einsatznummer: #${einsatzNummer}\n` +
-        `Angefordert von: ${interaction.user}\n\n` +
-        `Status: 🟡 Offen`
-      )
+      .setTitle(`🚨 ${fraktion.charAt(0).toUpperCase() + fraktion.slice(1)} Einsatz`)
+      .setDescription(`Einsatz von: ${user}\nStatus: 🟡 Offen\nOrt / Beschreibung: -`)
       .setColor("Red");
 
     const row = new ActionRowBuilder()
       .addComponents(
-        new ButtonBuilder()
-          .setCustomId("annehmen")
-          .setLabel("✅ Einsatz annehmen")
-          .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-          .setCustomId("close")
-          .setLabel("🔒 Einsatz schließen")
-          .setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId(`annehmen_${fraktion}`).setLabel("✅ Einsatz annehmen").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`update_${fraktion}`).setLabel("✏️ Status / Ort eintragen").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`close_${fraktion}`).setLabel("🔒 Einsatz schließen").setStyle(ButtonStyle.Danger)
       );
 
-    await channel.send({ embeds: [embed], components: [row] });
+    const msg = await zielChannel.send({ embeds: [embed], components: [row] });
+    offeneEinsaetze[fraktion] = { message: msg, angenommenVon: null };
 
-    offeneEinsaetze.set(channel.id, {
-      angenommenVon: null
-    });
-
-    einsatzNummer++;
-
-    await interaction.reply({
-      content: "✅ Dispatch wurde erstellt!",
-      ephemeral: true
-    });
+    return interaction.reply({ content: `✅ Einsatz für ${fraktion} erstellt!`, ephemeral: true });
   }
 
-  // ================================
-  // EINSATZ ANNEHMEN
-  // ================================
-  if (interaction.customId === "annehmen") {
+  // --- EIN-/AUSSTEMPELN STATUS ---
+  if (["medic_in","medic_out","werkstatt_in","werkstatt_out"].includes(interaction.customId)) {
+    let statusArray = interaction.customId.startsWith("medic") ? medicStatus : werkstattStatus;
+    let statusChannel = interaction.customId.startsWith("medic") ? await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID)
+                                                                  : await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
 
-    const einsatz = offeneEinsaetze.get(interaction.channel.id);
-    if (!einsatz) return;
-
-    if (einsatz.angenommenVon) {
-      return interaction.reply({
-        content: "❌ Dieser Einsatz wurde bereits übernommen!",
-        ephemeral: true
-      });
+    if (interaction.customId.endsWith("in")) {
+      if (!statusArray.includes(user.id)) statusArray.push(user.id);
+    } else {
+      statusArray = statusArray.filter(id => id !== user.id);
     }
 
-    einsatz.angenommenVon = interaction.user.id;
+    if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
+    else werkstattStatus = statusArray;
 
     const embed = new EmbedBuilder()
-      .setTitle("🚑 Einsatz übernommen")
-      .setDescription(
-        `Übernommen von: ${interaction.user}\n\n` +
-        `Status: 🟢 Unterwegs`
-      )
-      .setColor("Green");
+      .setTitle(interaction.customId.startsWith("medic") ? "🚑 Medic Status" : "🛠 Werkstatt Status")
+      .setDescription(statusArray.length > 0 ? statusArray.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+      .setColor(interaction.customId.startsWith("medic") ? "Green" : "Blue");
 
-    const disabledRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId("annehmen")
-          .setLabel("Bereits übernommen")
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
-        new ButtonBuilder()
-          .setCustomId("close")
-          .setLabel("🔒 Einsatz schließen")
-          .setStyle(ButtonStyle.Danger)
-      );
+    const messages = await statusChannel.messages.fetch({ limit: 10 });
+    const botMsg = messages.find(m => m.author.id === client.user.id);
+    if (botMsg) await botMsg.edit({ embeds: [embed] });
 
-    await interaction.update({
-      embeds: [embed],
-      components: [disabledRow]
+    return interaction.reply({ content: "✅ Status aktualisiert!", ephemeral: true });
+  }
+
+  // --- EINSATZ BUTTONS ---
+  const parts = interaction.customId.split("_");
+  if (parts.length < 2) return;
+  const action = parts[0];
+  const fraktion = parts[1];
+  const einsatz = offeneEinsaetze[fraktion];
+  if (!einsatz) return interaction.reply({ content: `❌ Kein aktiver Einsatz für ${fraktion}`, ephemeral: true });
+
+  const embed = EmbedBuilder.from(einsatz.message.embeds[0]);
+
+  if (action === "annehmen") {
+    if (einsatz.angenommenVon) {
+      return interaction.reply({ content: `❌ Einsatz wurde bereits übernommen von <@${einsatz.angenommenVon}>!`, ephemeral: true });
+    }
+    einsatz.angenommenVon = user.id;
+    embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: ${user}\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: -`);
+    embed.setColor("Green");
+    await einsatz.message.edit({ embeds: [embed] });
+    return interaction.reply({ content: `✅ Du hast den Einsatz übernommen!`, ephemeral: true });
+  }
+
+  if (action === "update") {
+    await interaction.reply({ content: "Schreibe jetzt in den Chat deinen Status / Ort für den Einsatz:", ephemeral: true });
+    const filter = m => m.author.id === user.id;
+    const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
+
+    collector.on('collect', async m => {
+      embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: <@${einsatz.angenommenVon || "-"}>\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: ${m.content}`);
+      await einsatz.message.edit({ embeds: [embed] });
+      await m.delete().catch(() => {});
+      await interaction.followUp({ content: `✅ Status aktualisiert!`, ephemeral: true });
     });
   }
 
-  // ================================
-  // EINSATZ SCHLIESSEN
-  // ================================
-  if (interaction.customId === "close") {
-
-    await interaction.reply({
-      content: "🔒 Einsatz wird geschlossen...",
-      ephemeral: true
-    });
-
-    setTimeout(() => {
-      interaction.channel.delete().catch(() => {});
-    }, 3000);
+  if (action === "close") {
+    await einsatz.message.edit({ content: `✔️ Einsatz abgeschlossen`, embeds: [] });
+    offeneEinsaetze[fraktion] = null;
+    return interaction.reply({ content: `🔒 Einsatz für ${fraktion} geschlossen`, ephemeral: true });
   }
 });
 
