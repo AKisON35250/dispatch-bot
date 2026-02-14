@@ -48,49 +48,36 @@ client.once('ready', async () => {
     await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
   }
 
-  // --- Status Channels ---
+  // --- Status im Dispatch-Channel ---
   await updateDispatchStatus();
 });
 
 // ================== STATUS UPDATE ==================
 async function updateDispatchStatus() {
-  const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
-  const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
+  const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
 
-  const medicEmbed = new EmbedBuilder()
-    .setTitle("🚑 Medic Status")
-    .setDescription(medicStatus.length > 0 ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
-    .setColor("Green");
+  const medicListe = medicStatus.length ? medicStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt";
+  const werkstattListe = werkstattStatus.length ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt";
 
-  const werkstattEmbed = new EmbedBuilder()
-    .setTitle("🛠 Werkstatt Status")
-    .setDescription(werkstattStatus.length > 0 ? werkstattStatus.map(id => `<@${id}>`).join("\n") : "Niemand eingestempelt")
+  const embed = new EmbedBuilder()
+    .setTitle("📡 Dispatch-Status")
+    .setDescription(`**🚑 Medic:**\n${medicListe}\n\n**🛠 Werkstatt:**\n${werkstattListe}`)
     .setColor("Blue");
 
-  // Medic Embed posten oder editieren
-  const medicMessages = await medicChannel.messages.fetch({ limit: 10 });
-  const medicBotMsg = medicMessages.find(m => m.author.id === client.user.id);
-  if (medicBotMsg) await medicBotMsg.edit({ embeds: [medicEmbed] });
-  else {
-    const rowMedic = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
-      );
-    await medicChannel.send({ content: "**Medic Status**", embeds: [medicEmbed], components: [rowMedic] });
-  }
+  const messages = await panelChannel.messages.fetch({ limit: 20 });
+  const botMsg = messages.find(m => m.author.id === client.user.id && m.embeds.length);
 
-  // Werkstatt Embed posten oder editieren
-  const werkstattMessages = await werkstattChannel.messages.fetch({ limit: 10 });
-  const werkstattBotMsg = werkstattMessages.find(m => m.author.id === client.user.id);
-  if (werkstattBotMsg) await werkstattBotMsg.edit({ embeds: [werkstattEmbed] });
-  else {
-    const rowWerkstatt = new ActionRowBuilder()
+  if (botMsg) {
+    await botMsg.edit({ embeds: [embed] });
+  } else {
+    const row = new ActionRowBuilder()
       .addComponents(
-        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Einstempeln").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Ausstempeln").setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId("medic_in").setLabel("✅ Medic einstempeln").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("medic_out").setLabel("❌ Medic ausstempeln").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("werkstatt_in").setLabel("✅ Werkstatt einstempeln").setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId("werkstatt_out").setLabel("❌ Werkstatt ausstempeln").setStyle(ButtonStyle.Danger)
       );
-    await werkstattChannel.send({ content: "**Werkstatt Status**", embeds: [werkstattEmbed], components: [rowWerkstatt] });
+    await panelChannel.send({ embeds: [embed], components: [row] });
   }
 }
 
@@ -222,7 +209,6 @@ client.on('interactionCreate', async interaction => {
         await client.channels.fetch(MEDIC_CHANNEL_ID) : 
         await client.channels.fetch(WERKSTATT_CHANNEL_ID);
 
-    // Rolle taggen damit alle es sehen
     const roleId = fraktion === "medic" ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
     await zielChannel.send({ content: `<@&${roleId}> ⚠️ Verstärkung benötigt!\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}` });
     return interaction.reply({ content: "✅ Verstärkung angefordert!", ephemeral: true });
