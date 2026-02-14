@@ -1,30 +1,12 @@
-const {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  EmbedBuilder 
 } = require('discord.js');
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
-});
-
-// ================== CONFIG ==================
-const DISPATCH_CHANNEL_ID = "1465480815206076580";      
-const MEDIC_CHANNEL_ID = "1472065994808889437";   
-const WERKSTATT_CHANNEL_ID = "1472067191238295745"; 
-const MEDIC_STATUS_CHANNEL_ID = "1472068510057369640";    
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";
-
-const { Client, GatewayIntentBits, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 
 const client = new Client({
   intents: [
@@ -230,5 +212,3 @@ client.on('interactionCreate', async interaction => {
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
-
-
