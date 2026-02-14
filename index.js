@@ -20,12 +20,12 @@ const client = new Client({
 
 // ================== CONFIG ==================
 const DISPATCH_CHANNEL_ID         = "1465480815206076580";       // Panel-Channel
-const MEDIC_CHANNEL_ID            = "1472065994808889437"; // Medic Einsätze
-const WERKSTATT_CHANNEL_ID        = "1472067191238295745"; // Werkstatt Einsätze
-const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";  // Status-Channel Medic
-const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781"; // Status-Channel Werkstatt
-const MEDIC_ROLE_ID               = "1466617210691653785";          // Medic Rolle
-const WERKSTATT_ROLE_ID           = "1472067368665485415";      // Werkstatt Rolle
+const MEDIC_CHANNEL_ID            = "1472065994808889437";       // Medic Einsätze
+const WERKSTATT_CHANNEL_ID        = "1472067191238295745";       // Werkstatt Einsätze
+const MEDIC_STATUS_CHANNEL_ID     = "1472068510057369640";       // Status-Channel Medic
+const WERKSTATT_STATUS_CHANNEL_ID = "1472068399709552781";       // Status-Channel Werkstatt
+const MEDIC_ROLE_ID               = "1466617210691653785";       // Medic Rolle
+const WERKSTATT_ROLE_ID           = "1472067368665485415";       // Werkstatt Rolle
 
 // ================== MAPS ==================
 let offeneEinsaetze = { werkstatt: null, medic: null };
@@ -128,11 +128,26 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.endsWith("in")) {
         if (!statusArray.includes(member.id)) {
             statusArray.push(member.id);
-            if (!member.roles.cache.has(roleId)) await member.roles.add(roleId).catch(console.error);
+
+            try {
+                const role = interaction.guild.roles.cache.get(roleId);
+                if (role && !member.roles.cache.has(roleId)) {
+                    await member.roles.add(role);
+                }
+            } catch (err) {
+                console.error("Fehler beim Rollen hinzufügen:", err);
+            }
         }
     } else {
         statusArray = statusArray.filter(id => id !== member.id);
-        if (member.roles.cache.has(roleId)) await member.roles.remove(roleId).catch(console.error);
+        try {
+            const role = interaction.guild.roles.cache.get(roleId);
+            if (role && member.roles.cache.has(roleId)) {
+                await member.roles.remove(role);
+            }
+        } catch (err) {
+            console.error("Fehler beim Rollen entfernen:", err);
+        }
     }
 
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
@@ -204,11 +219,15 @@ client.on('interactionCreate', async interaction => {
 
   // ================== VERSTÄRKUNG ==================
   if (action === "verstärkung") {
-    const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
-    await panelChannel.send(`⚠️ **Verstärkung benötigt!**\nFraktion: ${fraktion}\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}`);
-    return interaction.reply({ content: "✅ Verstärkung angefordert! Alle Medics wurden informiert.", ephemeral: true });
+    const zielChannel = fraktion === "medic" ? 
+        await client.channels.fetch(MEDIC_CHANNEL_ID) : 
+        await client.channels.fetch(WERKSTATT_CHANNEL_ID);
+
+    await zielChannel.send(`⚠️ **Verstärkung benötigt!**\nFraktion: ${fraktion}\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}`);
+    return interaction.reply({ content: "✅ Verstärkung angefordert! Alle Fraktionsmitglieder wurden informiert.", ephemeral: true });
   }
 });
 
 // ================== LOGIN ==================
 client.login(process.env.TOKEN);
+
