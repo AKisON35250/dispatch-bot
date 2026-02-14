@@ -36,7 +36,7 @@ let werkstattStatus = [];
 client.once('ready', async () => {
   console.log(`✅ Bot online als ${client.user.tag}`);
 
-  // Panel erstellen, falls noch nicht vorhanden
+  // --- Dispatch Panel ---
   const panelChannel = await client.channels.fetch(DISPATCH_CHANNEL_ID);
   const messages = await panelChannel.messages.fetch({ limit: 10 });
   if (!messages.some(m => m.author.id === client.user.id && m.components.length)) {
@@ -48,7 +48,7 @@ client.once('ready', async () => {
     await panelChannel.send({ content: "📡 **DISPATCH SYSTEM**\nKlicke auf deine Fraktion:", components: [row] });
   }
 
-  // Status-Channels vorbereiten
+  // --- Status Channels ---
   const medicChannel = await client.channels.fetch(MEDIC_STATUS_CHANNEL_ID);
   const werkstattChannel = await client.channels.fetch(WERKSTATT_STATUS_CHANNEL_ID);
 
@@ -105,7 +105,8 @@ client.on('interactionCreate', async interaction => {
                                                    : await client.channels.fetch(MEDIC_CHANNEL_ID);
 
       const msg = await zielChannel.send({ embeds: [embed], components: [row] });
-      offeneEinsaetze[fraktion] = { message: msg, angenommenVon: null };
+      offeneEinsaetze[fraktion] = { message: msg, angenommenVon: null, updates: [] };
+
       await interaction.followUp({ content: `✅ Einsatz für ${fraktion} erstellt!`, ephemeral: true });
     });
 
@@ -124,26 +125,17 @@ client.on('interactionCreate', async interaction => {
     if (interaction.customId.endsWith("in")) {
         if (!statusArray.includes(member.id)) {
             statusArray.push(member.id);
-
             try {
                 const role = interaction.guild.roles.cache.get(roleId);
-                if (role && !member.roles.cache.has(roleId)) {
-                    await member.roles.add(role);
-                }
-            } catch (err) {
-                console.error("Fehler beim Rollen hinzufügen:", err);
-            }
+                if (role) await member.roles.add(role);
+            } catch (err) { console.error("Rollen hinzufügen fehlgeschlagen:", err); }
         }
     } else {
         statusArray = statusArray.filter(id => id !== member.id);
         try {
             const role = interaction.guild.roles.cache.get(roleId);
-            if (role && member.roles.cache.has(roleId)) {
-                await member.roles.remove(role);
-            }
-        } catch (err) {
-            console.error("Fehler beim Rollen entfernen:", err);
-        }
+            if (role) await member.roles.remove(role);
+        } catch (err) { console.error("Rollen entfernen fehlgeschlagen:", err); }
     }
 
     if (interaction.customId.startsWith("medic")) medicStatus = statusArray;
@@ -180,7 +172,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: `❌ Bereits übernommen von <@${einsatz.angenommenVon}>!`, ephemeral: true });
 
     einsatz.angenommenVon = user.id;
-    embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: ${user}\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: ${embed.data.description.split("\n").slice(2).join("\n")}`);
+    embed.setDescription(embed.data.description + `\nÜbernommen von: <@${user.id}>\nStatus: 🟢 Unterwegs`);
     embed.setColor("Green");
 
     const row = new ActionRowBuilder()
@@ -200,10 +192,11 @@ client.on('interactionCreate', async interaction => {
     const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
 
     collector.on('collect', async m => {
-      embed.setDescription(`Einsatz von: ${einsatz.message.author}\nÜbernommen von: <@${einsatz.angenommenVon || "-"}>\nStatus: 🟢 Unterwegs\nOrt / Beschreibung: ${m.content}`);
+      einsatz.updates.push(`<@${user.id}>: ${m.content}`);
+      embed.setDescription(embed.data.description.split("\n").filter(line => !line.startsWith("Update:")).join("\n") + "\n" + einsatz.updates.join("\n"));
       await einsatz.message.edit({ embeds: [embed] });
       await m.delete().catch(() => {});
-      await interaction.followUp({ content: `✅ Status aktualisiert!`, ephemeral: true });
+      await interaction.followUp({ content: "✅ Status aktualisiert!", ephemeral: true });
     });
   }
 
@@ -213,13 +206,14 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({ content: `🔒 Einsatz für ${fraktion} geschlossen`, ephemeral: true });
   }
 
-  // ===== VERSTÄRKUNG =====
   if (action === "verstärkung") {
     const zielChannel = fraktion === "medic" ? 
         await client.channels.fetch(MEDIC_CHANNEL_ID) : 
         await client.channels.fetch(WERKSTATT_CHANNEL_ID);
 
-    await zielChannel.send(`⚠️ **Verstärkung benötigt!**\nFraktion: ${fraktion}\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}`);
+    // Rolle taggen damit alle es sehen
+    const roleId = fraktion === "medic" ? MEDIC_ROLE_ID : WERKSTATT_ROLE_ID;
+    await zielChannel.send({ content: `<@&${roleId}> ⚠️ Verstärkung benötigt!\nEinsatz von: <@${einsatz.angenommenVon}>\nOrt / Beschreibung:\n${embed.data.description.split("\n").slice(2).join("\n")}` });
     return interaction.reply({ content: "✅ Verstärkung angefordert!", ephemeral: true });
   }
 });
